@@ -1,0 +1,121 @@
+---
+title: "Prediction Assignment Feature Activity"
+author: "Vivek Singhal"
+date: "May 29, 2016"
+output: html_document
+---
+
+##Background and Goal
+
+This document looks to use data from accelerometers on the belt, forearm,arm and dumbbell of 6 participants and predict the manner in which they do exercise using the `classe` variable as the proxy for the exercise manner. 
+
+##Data Preparation
+
+####Load Data Packages
+
+```{r warning=FALSE, message=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(rattle)
+
+```
+
+####Download and Load training and test datasets
+
+```{r}
+if(!file.exists("pml-training.csv")) {
+        download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",destfile = "pml-training.csv")
+}
+
+if(!file.exists("pml-testing.csv")) {
+        download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",destfile = "pml-testing.csv")
+}
+
+pmltrain<-read.csv("pml-training.csv",na.strings = c("","NA","NULL"))
+pmltest<-read.csv("pml-testing.csv",na.strings = c("","NA","NULL"))
+
+
+```
+
+####Clean and Trim Training Dataset
+First we perform `str(pmltrain)` to examine the dataset for unnecessary variables. The first 5 variables in particular are irrelevant and can be removed. Next we notice many NA values in the dataset which can give misleading results when running models. So we ill remove variables with NA values. Lastly we check to see if there are any near zero variance variables which would then add no value to the predictive model. It seems there are none so there is no additional processing required.
+
+```{r}
+str(pmltrain)
+pmltrain1<-pmltrain[,-c(1:5)]
+
+pmltrain1<-pmltrain1[,colSums(is.na(pmltrain1))==0]
+
+NearZV<-nearZeroVar(pmltrain1)
+names(NearZV) #Actually zero variables with near zero variance
+
+```
+
+##Fitting Models to training Dataset
+
+####Partitioning the Dataset
+Next we randomly split the training dataset into a training set and validation set.
+```{r}
+set.seed(1212)
+inTrain<-createDataPartition(y=pmltrain1$classe,p=.7,list = FALSE)
+ptrainA<-pmltrain1[inTrain,]
+ptrainB<-pmltrain1[-inTrain,]
+
+```
+
+
+####Decision Tree Model
+Now that we have a training and validation dataset, we can building models to test prediction accuracy. To begin we will use the decision tree model. We notice a .827 accuracy rate which is reasonable but can be improved.
+
+```{r cache=TRUE}
+modfitDT<-rpart(classe~.,data = ptrainA,method="class")
+fancyRpartPlot(modfitDT)
+predDT<-predict(modfitDT,newdata=ptrainB,type="class")
+cmdt<-confusionMatrix(ptrainB$classe,predDT)
+cmdt$overall[1]
+
+```
+
+####Random Forest Model
+Now we experiment with the random forest predictive model on our test set. The accuracy is around .997 which is very strong and can be used when making predictions on our test set
+
+```{r}
+modfitRF<-randomForest(classe~.,data=ptrainA)
+predRF<-predict(modfitRF,newdata = ptrainB)
+cmrf<-confusionMatrix(ptrainB$classe,predRF)
+cmrf$overall[1] 
+```
+
+##Applying Model to Predict results for Test Dataset
+
+####Cleanse Test Set in same fashion as training dataset
+Perform similar transformations to test set so that predictions can be made. Equalize the levels of a factor variable to reduce issues when making predictions.
+```{r}
+pmltest1<-pmltest[,-c(1:5)]
+pmltest1<-pmltest1[,colSums(is.na(pmltest1))==0]
+levels(pmltest1$new_window)<-levels(pmltrain1$new_window)
+
+```
+
+####Predict Results on Test Set using Random Forest model
+```{r}
+predTest<-predict(modfitRF,newdata = pmltest1)
+predTest
+```
+
+####Create Function to Write results into Text file for submission
+```{r}
+pml_write_files = function(x){
+        n = length(x)
+        for(i in 1:n){
+                filename = paste0("problem_id_",i,".txt")
+                write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+        }
+}
+
+pml_write_files(predTest)
+
+```
+
